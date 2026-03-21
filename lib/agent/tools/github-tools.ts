@@ -274,4 +274,62 @@ export const githubTools = {
       }
     },
   }),
+
+  syncPullRequestStatuses: tool({
+    description: "Sync the status of all open PRs in the database with their actual state on GitHub. Closes stale PRs and marks merged ones as merged.",
+    inputSchema: z.object({}),
+    execute: async () => {
+      try {
+        const supabase = await createClient()
+        const { data: openPRs, error } = await supabase
+          .from("pull_requests")
+          .select("*")
+          .eq("status", "open")
+        if (error) return { error: error.message, synced: 0, merged: 0, closed: 0, stillOpen: 0, errors: [] }
+
+        let merged = 0
+        let closed = 0
+        let stillOpen = 0
+        const errors: string[] = []
+
+        for (const pr of openPRs ?? []) {
+          try {
+            const res = await fetch(
+              `${GH_API}/repos/${pr.github_owner}/${pr.github_repo}/pulls/${pr.github_pr_number}`,
+              { headers: ghHeaders() }
+            )
+            if (!res.ok) {
+              errors.push(`PR #${pr.github_pr_number}: GitHub API error ${res.status}`)
+              continue
+            }
+            const ghPR = await res.json()
+
+            if (ghPR.state === "closed") {
+              const newStatus = ghPR.merged_at !== null ? "merged" : "closed"
+              const { error: updateError } = await supabase
+                .from("pull_requests")
+                .update({ status: newStatus, updated_at: new Date().toISOString() })
+                .eq("id", pr.id)
+              if (updateError) {
+                errors.push(`PR #${pr.github_pr_number}: DB update error - ${updateError.message}`)
+              } else if (newStatus === "merged") {
+                merged++
+              } else {
+                closed++
+              }
+            } else {
+              stillOpen++
+            }
+          } catch (e: unknown) {
+            errors.push(`PR #${pr.github_pr_number}: ${String(e)}`)
+          }
+        }
+
+        const synced = merged + closed + stillOpen
+        return { synced, merged, closed, stillOpen, errors }
+      } catch (e: unknown) {
+        return { error: String(e), synced: 0, merged: 0, closed: 0, stillOpen: 0, errors: [] }
+      }
+    },
+  }),
 }

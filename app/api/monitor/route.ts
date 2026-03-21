@@ -4,8 +4,20 @@ import { securityTools } from "@/lib/agent/tools/security-tools"
 import { slackTools } from "@/lib/agent/tools/slack-tools"
 import { createClient } from "@/lib/supabase/server"
 
-// This route is called by a Vercel Cron Job every 5 minutes
-// Configure in vercel.json: { "crons": [{ "path": "/api/monitor", "schedule": "*/5 * * * *" }] }
+export const maxDuration = 60
+
+async function checkUptime(project: { name: string; vercel_project_id: string; url?: string | null }) {
+  const url = project.url ?? `https://${project.name}.vercel.app`
+  try {
+    const controller = new AbortController()
+    const timeout = setTimeout(() => controller.abort(), 10000)
+    const res = await fetch(url, { method: "HEAD", signal: controller.signal, redirect: "follow" })
+    clearTimeout(timeout)
+    return { up: res.ok || res.status < 500, status: res.status, url }
+  } catch {
+    return { up: false, status: 0, url }
+  }
+}
 
 export async function GET(req: Request) {
   const authHeader = req.headers.get("Authorization")
@@ -16,7 +28,6 @@ export async function GET(req: Request) {
   try {
     const supabase = await createClient()
 
-    // 1. Fetch monitored projects
     const { data: projects } = await supabase
       .from("monitored_projects")
       .select("*")
@@ -32,7 +43,7 @@ export async function GET(req: Request) {
     for (const project of projects) {
       let issuesFound = 0
 
-      // 2. Check latest deployments
+      // ── 1. Deployment failure check ──────────────────────────
       const depResult = await deploymentTools.listDeployments.execute({
         projectId: project.vercel_project_id,
         limit: 5,
@@ -42,7 +53,6 @@ export async function GET(req: Request) {
       if ("deployments" in depResult && Array.isArray(depResult.deployments)) {
         const failedDeps = depResult.deployments.filter((d: Record<string, unknown>) => d.state === "ERROR")
         for (const failed of failedDeps) {
-          // Dedup by deployment ID in description — prevents re-alerting on old failures
           const { data: existing } = await supabase
             .from("incidents")
             .select("id")
@@ -75,7 +85,38 @@ export async function GET(req: Request) {
         }
       }
 
-      results.push({ project: project.name, status: "scanned", issues: issuesFound })
+      // ── 2. Uptime check ──────────────────────────────────────
+      const uptime = await checkUptime(project)
+      if (!uptime.up) {
+        const { data: existingDown } = await supabase
+          .from("incidents")
+          .select("id")
+          .eq("category", "uptime")
+          .ilike("title", `%${project.name}%`)
+          .eq("status", "open")
+          .maybeSingle()
+
+        if (!existingDown) {
+          issuesFound++
+          await securityTools.createIncident.execute({
+            title: `Uptime alert: ${project.name} is down`,
+            description: `${uptime.url} returned status ${uptime.status || "timeout"}. Project appears to be unreachable.`,
+            severity: "critical",
+            category: "uptime",
+            vercelProjectId: project.vercel_project_id,
+            rootCause: "Service unreachable",
+            agentAnalysis: "Detected via automated uptime check.",
+            relatedDeploymentId: null,
+          }, { toolCallId: "monitor-uptime", messages: [], abortSignal: new AbortController().signal })
+
+          await slackTools.sendCustomAlert.execute({
+            message: `🔴 *Uptime Alert* — \`${project.name}\` is *DOWN*\n• URL: ${uptime.url}\n• Status: ${uptime.status || "timeout"}\nCheck the dashboard for details.`,
+            channel: null,
+          }, { toolCallId: "monitor-uptime-slack", messages: [], abortSignal: new AbortController().signal })
+        }
+      }
+
+      results.push({ project: project.name, status: uptime.up ? "up" : "down", issues: issuesFound })
     }
 
     return NextResponse.json({

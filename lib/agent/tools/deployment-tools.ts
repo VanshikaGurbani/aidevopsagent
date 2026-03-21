@@ -231,4 +231,102 @@ export const deploymentTools = {
       }
     },
   }),
+
+  rollbackToLastGoodDeployment: tool({
+    description: "Find the last successful production deployment for a project by name and rollback to it",
+    inputSchema: z.object({
+      projectName: z.string(),
+    }),
+    execute: async ({ projectName }) => {
+      try {
+        const projectsRes = await fetch(`${VERCEL_API}/v9/projects?search=${projectName}&limit=5`, {
+          headers: vercelHeaders(),
+        })
+        if (!projectsRes.ok) return { error: await projectsRes.text(), success: false }
+        const projectsData = await projectsRes.json()
+        const project = (projectsData.projects || [])[0]
+        if (!project) return { error: `No project found matching "${projectName}"`, success: false }
+        const projectId = project.id as string
+
+        const deploymentsRes = await fetch(`${VERCEL_API}/v6/deployments?projectId=${projectId}&limit=20`, {
+          headers: vercelHeaders(),
+        })
+        if (!deploymentsRes.ok) return { error: await deploymentsRes.text(), success: false }
+        const deploymentsData = await deploymentsRes.json()
+        const deployments = (deploymentsData.deployments || []) as Record<string, unknown>[]
+
+        const lastGood = deployments.slice(1).find(
+          (d) => d.state === "READY" && d.target === "production"
+        )
+        if (!lastGood) return { error: "No previous successful production deployment found", success: false }
+
+        const rollbackRes = await fetch(`${VERCEL_API}/v9/projects/${projectId}/rollback/${lastGood.uid}`, {
+          method: "POST",
+          headers: vercelHeaders(),
+        })
+        if (!rollbackRes.ok) return { error: await rollbackRes.text(), success: false }
+
+        return {
+          success: true,
+          projectId,
+          rolledBackTo: {
+            id: lastGood.uid,
+            url: lastGood.url,
+            createdAt: lastGood.createdAt,
+          },
+          message: `Successfully rolled back project "${projectName}" to deployment ${lastGood.uid}`,
+        }
+      } catch (e: unknown) {
+        return { error: String(e) }
+      }
+    },
+  }),
+
+  checkEnvVarDrift: tool({
+    description: "Compare environment variable keys between two Vercel projects to detect drift, or compare a project's keys against a provided list",
+    inputSchema: z.object({
+      projectId: z.string(),
+      compareToProjectId: z.string().nullable().describe("Second project ID to compare against, or null to just list keys"),
+    }),
+    execute: async ({ projectId, compareToProjectId }) => {
+      try {
+        const res = await fetch(`${VERCEL_API}/v9/projects/${projectId}/env`, {
+          headers: vercelHeaders(),
+        })
+        if (!res.ok) return { error: await res.text() }
+        const data = await res.json()
+        const projectKeys: string[] = (data.envs || []).map((e: Record<string, unknown>) => e.key as string)
+
+        if (!compareToProjectId) {
+          return { projectKeys, total: projectKeys.length }
+        }
+
+        const compareRes = await fetch(`${VERCEL_API}/v9/projects/${compareToProjectId}/env`, {
+          headers: vercelHeaders(),
+        })
+        if (!compareRes.ok) return { error: await compareRes.text() }
+        const compareData = await compareRes.json()
+        const compareKeys: string[] = (compareData.envs || []).map((e: Record<string, unknown>) => e.key as string)
+
+        const projectKeySet = new Set(projectKeys)
+        const compareKeySet = new Set(compareKeys)
+
+        const missingInProject = compareKeys.filter((k) => !projectKeySet.has(k))
+        const missingInCompare = projectKeys.filter((k) => !compareKeySet.has(k))
+
+        return {
+          projectKeys,
+          compareKeys,
+          missingInProject,
+          missingInCompare,
+          total: {
+            project: projectKeys.length,
+            compare: compareKeys.length,
+          },
+        }
+      } catch (e: unknown) {
+        return { error: String(e) }
+      }
+    },
+  }),
 }
