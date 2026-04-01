@@ -1,8 +1,13 @@
 const VERCEL_API = "https://api.vercel.com"
+const TEAM_SLUG = process.env.VERCEL_TEAM_SLUG ?? "watermelon-sugar1"
 
 function headers() {
   const token = process.env.VERCEL_TOKEN ?? process.env.VERCEL_ACCESS_TOKEN
   return { Authorization: `Bearer ${token}`, "Content-Type": "application/json" }
+}
+
+function team() {
+  return `teamId=${TEAM_SLUG}`
 }
 
 export interface VercelProject {
@@ -28,14 +33,14 @@ export interface VercelDeployment {
 }
 
 export async function fetchAllProjects(): Promise<VercelProject[]> {
-  const res = await fetch(`${VERCEL_API}/v9/projects?limit=100`, { headers: headers(), next: { revalidate: 30 } })
+  const res = await fetch(`${VERCEL_API}/v9/projects?limit=100&${team()}`, { headers: headers(), next: { revalidate: 30 } })
   if (!res.ok) return []
   const data = await res.json()
   return data.projects ?? []
 }
 
 export async function fetchDeploymentsForProject(projectId: string, limit = 10): Promise<VercelDeployment[]> {
-  const res = await fetch(`${VERCEL_API}/v6/deployments?projectId=${projectId}&limit=${limit}`, {
+  const res = await fetch(`${VERCEL_API}/v6/deployments?projectId=${projectId}&limit=${limit}&${team()}`, {
     headers: headers(),
     next: { revalidate: 30 },
   })
@@ -45,7 +50,7 @@ export async function fetchDeploymentsForProject(projectId: string, limit = 10):
 }
 
 export async function fetchAllDeployments(limit = 50): Promise<VercelDeployment[]> {
-  const res = await fetch(`${VERCEL_API}/v6/deployments?limit=${limit}`, {
+  const res = await fetch(`${VERCEL_API}/v6/deployments?limit=${limit}&${team()}`, {
     headers: headers(),
     next: { revalidate: 30 },
   })

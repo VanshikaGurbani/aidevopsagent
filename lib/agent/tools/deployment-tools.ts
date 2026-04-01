@@ -3,15 +3,18 @@ import { z } from "zod"
 import { createClient } from "@/lib/supabase/server"
 
 const VERCEL_API = "https://api.vercel.com"
+const TEAM_SLUG = process.env.VERCEL_TEAM_SLUG ?? "watermelon-sugar1"
 
 function vercelHeaders() {
-  // VERCEL_TOKEN is a built-in system env var Vercel injects automatically.
-  // VERCEL_ACCESS_TOKEN is the manual fallback (user-provided).
   const token = process.env.VERCEL_TOKEN ?? process.env.VERCEL_ACCESS_TOKEN
   return {
     Authorization: `Bearer ${token}`,
     "Content-Type": "application/json",
   }
+}
+
+function team() {
+  return `teamId=${TEAM_SLUG}`
 }
 
 export const deploymentTools = {
@@ -22,7 +25,7 @@ export const deploymentTools = {
     }),
     execute: async ({ limit }) => {
       try {
-        const res = await fetch(`${VERCEL_API}/v9/projects?limit=${limit}`, {
+        const res = await fetch(`${VERCEL_API}/v9/projects?limit=${limit}&${team()}`, {
           headers: vercelHeaders(),
         })
         if (!res.ok) {
@@ -56,7 +59,7 @@ export const deploymentTools = {
     }),
     execute: async ({ projectId, limit, status }) => {
       try {
-        let url = `${VERCEL_API}/v6/deployments?limit=${limit}`
+        let url = `${VERCEL_API}/v6/deployments?limit=${limit}&${team()}`
         if (projectId) url += `&projectId=${projectId}`
         if (status) url += `&state=${status}`
         const res = await fetch(url, { headers: vercelHeaders() })
@@ -88,8 +91,8 @@ export const deploymentTools = {
     execute: async ({ deploymentId }) => {
       try {
         const [deployRes, eventsRes] = await Promise.all([
-          fetch(`${VERCEL_API}/v13/deployments/${deploymentId}`, { headers: vercelHeaders() }),
-          fetch(`${VERCEL_API}/v2/deployments/${deploymentId}/events?limit=50`, { headers: vercelHeaders() }),
+          fetch(`${VERCEL_API}/v13/deployments/${deploymentId}?${team()}`, { headers: vercelHeaders() }),
+          fetch(`${VERCEL_API}/v2/deployments/${deploymentId}/events?limit=50&${team()}`, { headers: vercelHeaders() }),
         ])
         const deployment = deployRes.ok ? await deployRes.json() : null
         const events = eventsRes.ok ? await eventsRes.json() : []
@@ -118,7 +121,7 @@ export const deploymentTools = {
       try {
         const body: Record<string, unknown> = { name: projectName, target }
         if (gitBranch) body.gitSource = { type: "github", ref: gitBranch }
-        const res = await fetch(`${VERCEL_API}/v13/deployments`, {
+        const res = await fetch(`${VERCEL_API}/v13/deployments?${team()}`, {
           method: "POST",
           headers: vercelHeaders(),
           body: JSON.stringify(body),
@@ -139,7 +142,7 @@ export const deploymentTools = {
     }),
     execute: async ({ deploymentId }) => {
       try {
-        const res = await fetch(`${VERCEL_API}/v12/deployments/${deploymentId}/cancel`, {
+        const res = await fetch(`${VERCEL_API}/v12/deployments/${deploymentId}/cancel?${team()}`, {
           method: "PATCH",
           headers: vercelHeaders(),
         })
@@ -159,7 +162,7 @@ export const deploymentTools = {
     }),
     execute: async ({ projectId, deploymentId }) => {
       try {
-        const res = await fetch(`${VERCEL_API}/v9/projects/${projectId}/rollback/${deploymentId}`, {
+        const res = await fetch(`${VERCEL_API}/v9/projects/${projectId}/rollback/${deploymentId}?${team()}`, {
           method: "POST",
           headers: vercelHeaders(),
         })
@@ -178,7 +181,7 @@ export const deploymentTools = {
     }),
     execute: async ({ projectId }) => {
       try {
-        const res = await fetch(`${VERCEL_API}/v9/projects/${projectId}/env`, {
+        const res = await fetch(`${VERCEL_API}/v9/projects/${projectId}/env?${team()}`, {
           headers: vercelHeaders(),
         })
         if (!res.ok) return { error: await res.text(), envs: [] }
@@ -239,7 +242,7 @@ export const deploymentTools = {
     }),
     execute: async ({ projectName }) => {
       try {
-        const projectsRes = await fetch(`${VERCEL_API}/v9/projects?search=${projectName}&limit=5`, {
+        const projectsRes = await fetch(`${VERCEL_API}/v9/projects?search=${projectName}&limit=5&${team()}`, {
           headers: vercelHeaders(),
         })
         if (!projectsRes.ok) return { error: await projectsRes.text(), success: false }
@@ -248,7 +251,7 @@ export const deploymentTools = {
         if (!project) return { error: `No project found matching "${projectName}"`, success: false }
         const projectId = project.id as string
 
-        const deploymentsRes = await fetch(`${VERCEL_API}/v6/deployments?projectId=${projectId}&limit=20`, {
+        const deploymentsRes = await fetch(`${VERCEL_API}/v6/deployments?projectId=${projectId}&limit=20&${team()}`, {
           headers: vercelHeaders(),
         })
         if (!deploymentsRes.ok) return { error: await deploymentsRes.text(), success: false }
@@ -290,7 +293,7 @@ export const deploymentTools = {
     }),
     execute: async ({ projectId, compareToProjectId }) => {
       try {
-        const res = await fetch(`${VERCEL_API}/v9/projects/${projectId}/env`, {
+        const res = await fetch(`${VERCEL_API}/v9/projects/${projectId}/env?${team()}`, {
           headers: vercelHeaders(),
         })
         if (!res.ok) return { error: await res.text() }
@@ -301,7 +304,7 @@ export const deploymentTools = {
           return { projectKeys, total: projectKeys.length }
         }
 
-        const compareRes = await fetch(`${VERCEL_API}/v9/projects/${compareToProjectId}/env`, {
+        const compareRes = await fetch(`${VERCEL_API}/v9/projects/${compareToProjectId}/env?${team()}`, {
           headers: vercelHeaders(),
         })
         if (!compareRes.ok) return { error: await compareRes.text() }
