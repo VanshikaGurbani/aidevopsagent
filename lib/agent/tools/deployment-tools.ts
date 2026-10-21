@@ -263,7 +263,7 @@ export const deploymentTools = {
         )
         if (!lastGood) return { error: "No previous successful production deployment found", success: false }
 
-        const rollbackRes = await fetch(`${VERCEL_API}/v9/projects/${projectId}/rollback/${lastGood.uid}`, {
+        const rollbackRes = await fetch(`${VERCEL_API}/v9/projects/${projectId}/rollback/${lastGood.uid}?${team()}`, {
           method: "POST",
           headers: vercelHeaders(),
         })

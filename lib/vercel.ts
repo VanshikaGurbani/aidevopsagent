@@ -6,7 +6,7 @@ function headers() {
   return { Authorization: `Bearer ${token}`, "Content-Type": "application/json" }
 }
 
-function team() {
+export function team() {
   return `teamId=${TEAM_SLUG}`
 }
 
