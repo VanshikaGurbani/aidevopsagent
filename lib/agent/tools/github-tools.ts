@@ -1,6 +1,7 @@
 import { tool } from "ai"
 import { z } from "zod"
 import { createClient } from "@/lib/supabase/server"
+import { checkBranch, checkContent, checkPath, checkText, dryRunResult, isDryRun, prsAreDrafts } from "@/lib/agent/guards"
 
 const GH_API = "https://api.github.com"
 
@@ -82,6 +83,7 @@ export const githubTools = {
       baseBranch: z.string().default("main").describe("Branch to create from"),
     }),
     execute: async ({ owner, repo, branchName, baseBranch }) => {
+      if (isDryRun()) return dryRunResult(`create branch ${branchName} from ${baseBranch} in ${owner}/${repo}`, { owner, repo, branchName, baseBranch })
       try {
         // Get base branch SHA
         const refRes = await fetch(`${GH_API}/repos/${owner}/${repo}/git/ref/heads/${baseBranch}`, {
@@ -120,6 +122,9 @@ export const githubTools = {
       existingFileSha: z.string().nullable().describe("SHA of existing file if updating (from getFileContents)"),
     }),
     execute: async ({ owner, repo, branch, path, content, commitMessage, existingFileSha }) => {
+      const blockedBy = checkBranch(branch) ?? checkPath(path) ?? checkContent(content) ?? checkText(commitMessage, "commit message")
+      if (blockedBy) return blockedBy
+      if (isDryRun()) return dryRunResult(`commit ${path} to ${owner}/${repo}@${branch}`, { owner, repo, branch, path, bytes: Buffer.byteLength(content), commitMessage })
       try {
         const encodedContent = Buffer.from(content).toString("base64")
         const body: Record<string, unknown> = {
@@ -163,18 +168,20 @@ export const githubTools = {
       incidentId: z.string().nullable().describe("UUID of the related incident to link"),
     }),
     execute: async ({ owner, repo, title, body, headBranch, baseBranch, incidentId }) => {
+      const blockedBy = checkBranch(headBranch) ?? checkText(`${title}
+${body}`, "PR title/description")
+      if (blockedBy) return blockedBy
+      if (isDryRun()) return dryRunResult(`open a pull request "${title}" from ${headBranch} into ${baseBranch} in ${owner}/${repo}`, { owner, repo, title, headBranch, baseBranch })
       try {
-        const res = await fetch(`${GH_API}/repos/${owner}/${repo}/pulls`, {
-          method: "POST",
-          headers: ghHeaders(),
-          body: JSON.stringify({
-            title,
-            body,
-            head: headBranch,
-            base: baseBranch,
-            draft: false,
-          }),
-        })
+        // Agent PRs open as drafts so a person has to mark them ready; repos that do not support drafts get a normal PR.
+        const open = (draft: boolean) =>
+          fetch(`${GH_API}/repos/${owner}/${repo}/pulls`, {
+            method: "POST",
+            headers: ghHeaders(),
+            body: JSON.stringify({ title, body, head: headBranch, base: baseBranch, draft }),
+          })
+        let res = await open(prsAreDrafts())
+        if (!res.ok && prsAreDrafts() && res.status === 422 && /draft/i.test(await res.clone().text())) res = await open(false)
         if (!res.ok) {
           const err = await res.json()
           return { error: err.message || "Failed to create PR", success: false }
