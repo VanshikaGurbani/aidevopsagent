@@ -1,6 +1,7 @@
 import { tool } from "ai"
 import { z } from "zod"
 import { createClient } from "@/lib/supabase/server"
+import { team } from "@/lib/vercel"
 import type { IncidentSeverity, IncidentCategory } from "@/lib/types"
 
 const VERCEL_API = "https://api.vercel.com"
@@ -27,7 +28,7 @@ export const securityTools = {
 
         // Check deployment events for security signals
         const eventsRes = await fetch(
-          `${VERCEL_API}/v2/deployments/${deploymentId}/events?limit=100`,
+          `${VERCEL_API}/v2/deployments/${deploymentId}/events?limit=100&${team()}`,
           { headers: vercelHeaders() }
         )
         if (eventsRes.ok) {
@@ -47,7 +48,7 @@ export const securityTools = {
 
         // Check env vars for potential issues
         if (projectId) {
-          const envRes = await fetch(`${VERCEL_API}/v9/projects/${projectId}/env`, {
+          const envRes = await fetch(`${VERCEL_API}/v9/projects/${projectId}/env?${team()}`, {
             headers: vercelHeaders(),
           })
           if (envRes.ok) {
@@ -80,7 +81,7 @@ export const securityTools = {
     }),
     execute: async ({ projectId }) => {
       try {
-        const res = await fetch(`${VERCEL_API}/v9/projects/${projectId}`, {
+        const res = await fetch(`${VERCEL_API}/v9/projects/${projectId}?${team()}`, {
           headers: vercelHeaders(),
         })
         if (!res.ok) return { error: await res.text() }
