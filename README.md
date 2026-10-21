@@ -42,6 +42,19 @@ An autonomous AI DevOps agent built with Next.js, Gemini 3 Flash, and the Vercel
 
 ---
 
+## Safety controls
+
+The agent acts on real systems, so every change it makes goes through guards in `lib/agent/guards.ts` before any API call:
+
+- **Draft PRs.** Agent PRs open as drafts, so a person has to mark them ready for review. Set `AGENT_PR_READY=true` to open them ready. Repositories that do not support drafts get a normal PR.
+- **No direct commits** to `main`, `master`, `production` or `release`; the agent works on its own fix branch.
+- **Path rules.** Edits to `.github/`, `.env*`, `.claude/`, `deploy.sh`, key files and anything outside the repo are always refused. Set `AGENT_ALLOWED_PATHS` (comma-separated paths or globs, e.g. `app/,vercel.json,lib/*.ts`) to restrict edits to those paths only.
+- **Secret scan.** A commit, commit message, PR title or PR description that contains something that looks like a credential (cloud or GitHub tokens, Slack tokens and webhooks, Stripe/Google keys, private keys, JWTs, hardcoded `api_key = "..."`) is refused. Only the kind of secret is reported, never its value. This is a pattern check, not a guarantee.
+- **Size limit.** Files over 200 KB are refused.
+- **Dry run.** Set `AGENT_DRY_RUN=true` and the agent only reports what it would do (branches, commits, PRs, deploys, cancels, rollbacks) without making any of those calls.
+
+---
+
 ## Tech Stack
 
 - **Framework** — Next.js 16 (App Router)

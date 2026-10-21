@@ -1,6 +1,7 @@
 import { tool } from "ai"
 import { z } from "zod"
 import { createClient } from "@/lib/supabase/server"
+import { dryRunResult, isDryRun } from "@/lib/agent/guards"
 
 const VERCEL_API = "https://api.vercel.com"
 const TEAM_SLUG = process.env.VERCEL_TEAM_SLUG ?? "watermelon-sugar1"
@@ -118,6 +119,7 @@ export const deploymentTools = {
       gitBranch: z.string().nullable().describe("Git branch to deploy"),
     }),
     execute: async ({ projectName, target, gitBranch }) => {
+      if (isDryRun()) return dryRunResult(`deploy ${projectName} to ${target}`, { projectName, target, gitBranch })
       try {
         const body: Record<string, unknown> = { name: projectName, target }
         if (gitBranch) body.gitSource = { type: "github", ref: gitBranch }
@@ -141,6 +143,7 @@ export const deploymentTools = {
       deploymentId: z.string().describe("Vercel deployment UID to cancel"),
     }),
     execute: async ({ deploymentId }) => {
+      if (isDryRun()) return dryRunResult(`cancel deployment ${deploymentId}`, { deploymentId })
       try {
         const res = await fetch(`${VERCEL_API}/v12/deployments/${deploymentId}/cancel?${team()}`, {
           method: "PATCH",
@@ -161,6 +164,7 @@ export const deploymentTools = {
       deploymentId: z.string().describe("Deployment UID to rollback to"),
     }),
     execute: async ({ projectId, deploymentId }) => {
+      if (isDryRun()) return dryRunResult(`roll back project ${projectId} to deployment ${deploymentId}`, { projectId, deploymentId })
       try {
         const res = await fetch(`${VERCEL_API}/v9/projects/${projectId}/rollback/${deploymentId}?${team()}`, {
           method: "POST",
@@ -263,6 +267,7 @@ export const deploymentTools = {
         )
         if (!lastGood) return { error: "No previous successful production deployment found", success: false }
 
+        if (isDryRun()) return dryRunResult(`roll back ${projectName} to deployment ${lastGood.uid}`, { projectId, rollbackTo: lastGood.uid })
         const rollbackRes = await fetch(`${VERCEL_API}/v9/projects/${projectId}/rollback/${lastGood.uid}?${team()}`, {
           method: "POST",
           headers: vercelHeaders(),
