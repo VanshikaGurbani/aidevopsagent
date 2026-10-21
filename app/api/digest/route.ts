@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server"
 import { createClient } from "@/lib/supabase/server"
+import { isAuthorizedCron } from "@/lib/auth/cron"
 
 export const maxDuration = 60
 
@@ -14,8 +15,7 @@ async function postToSlack(text: string) {
 }
 
 export async function GET(req: Request) {
-  const authHeader = req.headers.get("Authorization")
-  if (authHeader !== `Bearer ${process.env.CRON_SECRET}`) {
+  if (!isAuthorizedCron(req)) {
     return new Response("Unauthorized", { status: 401 })
   }
 
