@@ -44,7 +44,7 @@ export async function GET(req: Request) {
       let issuesFound = 0
 
       // ── 1. Deployment failure check ──────────────────────────
-      const depResult = await deploymentTools.listDeployments.execute({
+      const depResult = await deploymentTools.listDeployments.execute!({
         projectId: project.vercel_project_id,
         limit: 5,
         status: null,
@@ -62,7 +62,7 @@ export async function GET(req: Request) {
 
           if (!existing) {
             issuesFound++
-            await securityTools.createIncident.execute({
+            await securityTools.createIncident.execute!({
               title: `Deployment failure: ${project.name}`,
               description: `Deployment ${failed.id} failed for project ${project.name}.`,
               severity: "high",
@@ -73,7 +73,7 @@ export async function GET(req: Request) {
               relatedDeploymentId: null,
             }, { toolCallId: "monitor-incident", messages: [], abortSignal: new AbortController().signal })
 
-            await slackTools.sendDeploymentNotification.execute({
+            await slackTools.sendDeploymentNotification.execute!({
               projectName: project.name,
               deploymentUrl: failed.url ?? null,
               status: "error",
@@ -91,27 +91,27 @@ export async function GET(req: Request) {
         const { data: existingDown } = await supabase
           .from("incidents")
           .select("id")
-          .eq("category", "uptime")
+          .eq("category", "availability")
           .ilike("title", `%${project.name}%`)
           .eq("status", "open")
           .maybeSingle()
 
         if (!existingDown) {
           issuesFound++
-          await securityTools.createIncident.execute({
+          await securityTools.createIncident.execute!({
             title: `Uptime alert: ${project.name} is down`,
             description: `${uptime.url} returned status ${uptime.status || "timeout"}. Project appears to be unreachable.`,
             severity: "critical",
-            category: "uptime",
+            category: "availability",
             vercelProjectId: project.vercel_project_id,
             rootCause: "Service unreachable",
             agentAnalysis: "Detected via automated uptime check.",
             relatedDeploymentId: null,
           }, { toolCallId: "monitor-uptime", messages: [], abortSignal: new AbortController().signal })
 
-          await slackTools.sendCustomAlert.execute({
+          await slackTools.sendCustomAlert.execute!({
             message: `🔴 *Uptime Alert* — \`${project.name}\` is *DOWN*\n• URL: ${uptime.url}\n• Status: ${uptime.status || "timeout"}\nCheck the dashboard for details.`,
-            channel: null,
+            severity: "critical",
           }, { toolCallId: "monitor-uptime-slack", messages: [], abortSignal: new AbortController().signal })
         }
       }
