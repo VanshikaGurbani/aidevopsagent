@@ -3,6 +3,7 @@ import { deploymentTools } from "@/lib/agent/tools/deployment-tools"
 import { securityTools } from "@/lib/agent/tools/security-tools"
 import { slackTools } from "@/lib/agent/tools/slack-tools"
 import { createClient } from "@/lib/supabase/server"
+import { isAuthorizedCron } from "@/lib/auth/cron"
 
 export const maxDuration = 60
 
@@ -20,8 +21,7 @@ async function checkUptime(project: { name: string; vercel_project_id: string; u
 }
 
 export async function GET(req: Request) {
-  const authHeader = req.headers.get("Authorization")
-  if (authHeader !== `Bearer ${process.env.CRON_SECRET}`) {
+  if (!isAuthorizedCron(req)) {
     return new Response("Unauthorized", { status: 401 })
   }
 
