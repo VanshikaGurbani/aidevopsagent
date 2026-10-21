@@ -35,10 +35,11 @@ An autonomous AI DevOps agent built with Next.js, Gemini 3 Flash, and the Vercel
 - Get notified when the agent raises a PR
 - **Weekly digest** — posts every Saturday at 5pm EST: deployments, incidents resolved, PRs raised, security findings
 
-### Automated Monitoring (Hourly Cron)
+### Automated Monitoring (Daily Cron)
 - **Deployment failure detection** — finds new failed deployments and creates incidents, deduped so you only get alerted once per failure
 - **Uptime checks** — pings every monitored project URL; creates a critical incident and Slack alert if a project is unreachable
-- All monitoring runs automatically every hour via Vercel Cron
+- Monitoring runs once a day (09:00 UTC, see `vercel.json`) via Vercel Cron; change the `schedule` there to run it more often (Vercel's Hobby plan only allows daily crons)
+- The cron route only creates incidents and Slack alerts. Root-cause analysis and fix PRs happen when you ask the agent (Slack `/devops` or the dashboard chat), not on the cron
 
 ---
 
@@ -138,7 +139,7 @@ Prints all env vars, builds the app, and deploys to Vercel production.
 
 | Job | Schedule | What it does |
 |---|---|---|
-| Monitor | Every hour | Deployment failure checks + uptime pings for all projects |
+| Monitor | Daily, 09:00 UTC | Deployment failure checks + uptime pings for all projects |
 | Weekly Digest | Saturday 5pm EST | Posts a weekly summary to Slack |
 
 ---
@@ -157,7 +158,7 @@ app/
 ├── api/
 │   ├── agent/            # Streaming chat endpoint
 │   ├── slack/            # Slack slash command handler
-│   ├── monitor/          # Hourly cron — uptime + deployment checks
+│   ├── monitor/          # Daily cron — uptime + deployment checks
 │   ├── digest/           # Weekly Slack digest
 │   └── conversations/    # Chat session persistence (24hr)
 lib/
